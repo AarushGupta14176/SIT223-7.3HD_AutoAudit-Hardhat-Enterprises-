@@ -37,7 +37,9 @@ pipeline {
                     pip install --no-cache-dir \
                         pytest pytest-cov pytest-asyncio greenlet \
                         httpx fastapi uvicorn pydantic pydantic-settings \
-                        sqlalchemy asyncpg prometheus-fastapi-instrumentator cryptography
+                        sqlalchemy asyncpg prometheus-fastapi-instrumentator cryptography \
+                        "fastapi-users[sqlalchemy]" alembic httpx-oauth msal \
+                        python-multipart python-dotenv celery redis
                     mkdir -p test-reports
                     PYTHONPATH=backend-api pytest --junitxml=test-reports/results.xml backend-api/tests/test_health_public.py
                 '''
