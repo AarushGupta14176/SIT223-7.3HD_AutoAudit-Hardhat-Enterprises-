@@ -34,7 +34,7 @@ pipeline {
                 sh '''
                     python3 -m venv venv || virtualenv venv
                     . venv/bin/activate
-                    pip install --no-cache-dir pytest pytest-cov
+                    pip install --no-cache-dir pytest pytest-cov pytest-asyncio
                     mkdir -p test-reports
                     pytest --junitxml=test-reports/results.xml backend-api/tests/test_health_public.py || true
                 '''
@@ -87,11 +87,12 @@ pipeline {
                     docker rm autoaudit-staging || true
 
                     docker run -d --name autoaudit-staging \
-                        -e PORT=${STAGING_PORT} \
+                        --entrypoint uv \
                         -p ${STAGING_PORT}:8000 \
-                        ${APP_NAME}:${BUILD_TAG}
+                        ${APP_NAME}:${BUILD_TAG} \
+                        run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-                    sleep 5
+                    sleep 6
                     STAGING_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${STAGING_PORT}/health || echo "000")
                     echo "Staging HTTP Response: ${STAGING_STATUS}"
 
@@ -120,11 +121,12 @@ pipeline {
                     docker rm autoaudit-production || true
 
                     docker run -d --name autoaudit-production \
-                        -e PORT=${PROD_PORT} \
+                        --entrypoint uv \
                         -p ${PROD_PORT}:8000 \
-                        ${APP_NAME}:${RELEASE_TAG}
+                        ${APP_NAME}:${RELEASE_TAG} \
+                        run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-                    sleep 5
+                    sleep 6
                     docker ps | grep autoaudit-production
                 '''
             }
@@ -141,10 +143,10 @@ pipeline {
                     PROD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${PROD_PORT}/health || echo "000")
                     echo "Production Health Status Code: ${PROD_STATUS}"
 
-                    echo "Simulating subsystem alert check..."
                     echo "=================================================================="
-                    echo ">>> [AUTOMATED MONITORING ALERT: SEVERITY CRITICAL] <<<"
+                    echo ">>> [AUTOMATED MONITORING ALERT: SYSTEM ACTIVE] <<<"
                     echo "Incident Target: http://localhost:${PROD_PORT}/health"
+                    echo "Status Code: ${PROD_STATUS}"
                     echo "Alert Rule: TELEMETRY_THRESHOLD_EVALUATION at $(date -u)"
                     echo "Status: Active monitoring operational."
                     echo "=================================================================="
