@@ -34,9 +34,12 @@ pipeline {
                 sh '''
                     python3 -m venv venv || virtualenv venv
                     . venv/bin/activate
-                    pip install --no-cache-dir pytest pytest-cov pytest-asyncio
+                    pip install --no-cache-dir \
+                        pytest pytest-cov pytest-asyncio \
+                        httpx fastapi uvicorn pydantic pydantic-settings \
+                        sqlalchemy asyncpg prometheus-fastapi-instrumentator cryptography
                     mkdir -p test-reports
-                    pytest --junitxml=test-reports/results.xml backend-api/tests/test_health_public.py || true
+                    PYTHONPATH=backend-api pytest --junitxml=test-reports/results.xml backend-api/tests/test_health_public.py || true
                 '''
             }
             post {
@@ -93,17 +96,17 @@ pipeline {
                         run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
                     sleep 6
-                    STAGING_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${STAGING_PORT}/health || echo "000")
-                    echo "Staging HTTP Response: ${STAGING_STATUS}"
+                    STAGING_STATUS=$(docker exec autoaudit-staging curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/liveness || echo "000")
+                    echo "Staging Container Health Probe HTTP Response: ${STAGING_STATUS}"
 
-                    if [ "${STAGING_STATUS}" != "200" ] && [ "${STAGING_STATUS}" != "404" ]; then
+                    if [ "${STAGING_STATUS}" != "200" ]; then
                         echo "[CRITICAL DEPLOY FAILURE] Staging verification failed! Initiating rollback..."
                         docker stop autoaudit-staging || true
                         docker rm autoaudit-staging || true
                         echo "[ROLLBACK COMPLETED] Reverted unverified container."
                         exit 1
                     fi
-                    echo "[STAGING DEPLOY VERIFIED] Staging container running successfully on port ${STAGING_PORT}."
+                    echo "[STAGING DEPLOY VERIFIED] Staging container healthy and listening on port ${STAGING_PORT}."
                 '''
             }
         }
@@ -139,16 +142,21 @@ pipeline {
             steps {
                 echo ">>> [STAGE 7: MONITORING] Live telemetry probe and incident alerting checks..."
                 sh '''
-                    echo "Checking live production healthcheck status on port ${PROD_PORT}..."
-                    PROD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${PROD_PORT}/health || echo "000")
+                    echo "Probing live production health endpoint..."
+                    PROD_STATUS=$(docker exec autoaudit-production curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/liveness || echo "000")
                     echo "Production Health Status Code: ${PROD_STATUS}"
 
+                    if [ "${PROD_STATUS}" != "200" ]; then
+                        echo "[ALERT] Production healthcheck probe returned status ${PROD_STATUS}!"
+                        exit 1
+                    fi
+
                     echo "=================================================================="
-                    echo ">>> [AUTOMATED MONITORING ALERT: SYSTEM ACTIVE] <<<"
-                    echo "Incident Target: http://localhost:${PROD_PORT}/health"
-                    echo "Status Code: ${PROD_STATUS}"
+                    echo ">>> [AUTOMATED MONITORING ALERT: SYSTEM ACTIVE & HEALTHY] <<<"
+                    echo "Incident Target: http://localhost:${PROD_PORT}/liveness"
+                    echo "Probe Response: HTTP ${PROD_STATUS} OK"
                     echo "Alert Rule: TELEMETRY_THRESHOLD_EVALUATION at $(date -u)"
-                    echo "Status: Active monitoring operational."
+                    echo "Status: Active monitoring operational. Zero incident conditions."
                     echo "=================================================================="
                 '''
             }
