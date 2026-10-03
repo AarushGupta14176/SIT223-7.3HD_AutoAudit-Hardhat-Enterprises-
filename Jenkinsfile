@@ -35,11 +35,11 @@ pipeline {
                     python3 -m venv venv || virtualenv venv
                     . venv/bin/activate
                     pip install --no-cache-dir \
-                        pytest pytest-cov pytest-asyncio \
+                        pytest pytest-cov pytest-asyncio greenlet \
                         httpx fastapi uvicorn pydantic pydantic-settings \
                         sqlalchemy asyncpg prometheus-fastapi-instrumentator cryptography
                     mkdir -p test-reports
-                    PYTHONPATH=backend-api pytest --junitxml=test-reports/results.xml backend-api/tests/test_health_public.py || true
+                    PYTHONPATH=backend-api pytest --junitxml=test-reports/results.xml backend-api/tests/test_health_public.py
                 '''
             }
             post {
