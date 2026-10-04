@@ -97,12 +97,21 @@ pipeline {
                         ${APP_NAME}:${BUILD_TAG} \
                         run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-                    sleep 6
-                    STAGING_STATUS=$(docker exec autoaudit-staging curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/liveness || echo "000")
-                    echo "Staging Container Health Probe HTTP Response: ${STAGING_STATUS}"
+                    STAGING_STATUS="000"
+                    for i in 1 2 3 4 5 6 7 8 9 10; do
+                        sleep 2
+                        CODE=$(docker exec autoaudit-staging curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/liveness 2>/dev/null || true)
+                        echo "Staging Health Probe (Attempt $i/10): ${CODE}"
+                        if [ "${CODE}" = "200" ]; then
+                            STAGING_STATUS="200"
+                            break
+                        fi
+                    done
 
                     if [ "${STAGING_STATUS}" != "200" ]; then
-                        echo "[CRITICAL DEPLOY FAILURE] Staging verification failed! Initiating rollback..."
+                        echo "[CRITICAL DEPLOY FAILURE] Staging verification failed! Container logs:"
+                        docker logs autoaudit-staging || true
+                        echo "Initiating rollback..."
                         docker stop autoaudit-staging || true
                         docker rm autoaudit-staging || true
                         echo "[ROLLBACK COMPLETED] Reverted unverified container."
@@ -131,7 +140,7 @@ pipeline {
                         ${APP_NAME}:${RELEASE_TAG} \
                         run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-                    sleep 6
+                    sleep 3
                     docker ps | grep autoaudit-production
                 '''
             }
@@ -145,8 +154,16 @@ pipeline {
                 echo ">>> [STAGE 7: MONITORING] Live telemetry probe and incident alerting checks..."
                 sh '''
                     echo "Probing live production health endpoint..."
-                    PROD_STATUS=$(docker exec autoaudit-production curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/liveness || echo "000")
-                    echo "Production Health Status Code: ${PROD_STATUS}"
+                    PROD_STATUS="000"
+                    for i in 1 2 3 4 5 6 7 8 9 10; do
+                        sleep 2
+                        CODE=$(docker exec autoaudit-production curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/liveness 2>/dev/null || true)
+                        echo "Production Health Probe (Attempt $i/10): ${CODE}"
+                        if [ "${CODE}" = "200" ]; then
+                            PROD_STATUS="200"
+                            break
+                        fi
+                    done
 
                     if [ "${PROD_STATUS}" != "200" ]; then
                         echo "[ALERT] Production healthcheck probe returned status ${PROD_STATUS}!"
